@@ -10,13 +10,19 @@ jobs:
     runs-on: self-hosted
 
     steps:
-      - name: Deploy Phoenix AI on VPS
+      - name: Deploy Phoenix AI
         shell: bash
         run: |
+          git config --global --add safe.directory /opt/phoenix
+
           cd /opt/phoenix
+
           git fetch origin
           git reset --hard origin/main
+
           npm install
+
           pm2 restart phoenix-ai || pm2 start npm --name phoenix-ai -- start
+
           pm2 save
           pm2 status
