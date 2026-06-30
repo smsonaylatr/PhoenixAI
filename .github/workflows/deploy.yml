@@ -20,7 +20,7 @@ jobs:
           git fetch origin
           git reset --hard origin/main
 
-          npm install
+          npm install --omit=dev
 
           if pm2 describe phoenix-ai > /dev/null 2>&1; then
             pm2 restart phoenix-ai --update-env
@@ -29,4 +29,5 @@ jobs:
           fi
 
           pm2 save
-          pm2 status
+
+          echo "Phoenix deploy tamamlandı."
