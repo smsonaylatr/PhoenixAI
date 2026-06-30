@@ -5,3 +5,6 @@ node_modules/
 *.mp3
 *.ogg
 .DS_Store
+.env
+.env
+.env.example
