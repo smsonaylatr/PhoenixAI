@@ -1,0 +1,22 @@
+name: Phoenix Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Deploy Phoenix AI on VPS
+        shell: bash
+        run: |
+          cd /opt/phoenix
+          git fetch origin
+          git reset --hard origin/main
+          npm install
+          pm2 restart phoenix-ai || pm2 start npm --name phoenix-ai -- start
+          pm2 save
+          pm2 status
