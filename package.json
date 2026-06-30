@@ -1,0 +1,27 @@
+{
+  "name": "phoenix-ai-telegram-bot",
+  "version": "1.0.0",
+  "description": "Phoenix AI - Telegram voice life coach bot with OpenAI + ElevenLabs",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "check": "node --check src/index.js"
+  },
+  "dependencies": {
+    "@elevenlabs/elevenlabs-js": "latest",
+    "axios": "latest",
+    "better-sqlite3": "latest",
+    "dotenv": "latest",
+    "node-cron": "latest",
+    "openai": "latest",
+    "telegraf": "latest"
+  },
+  "devDependencies": {
+    "nodemon": "latest"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

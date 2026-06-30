@@ -1,0 +1,7 @@
+node_modules/
+.env
+*.db
+*.db-*
+*.mp3
+*.ogg
+.DS_Store
