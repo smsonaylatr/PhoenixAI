@@ -91,6 +91,7 @@ async function transcribeAudio(filePath) {
     model: process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe',
     language: 'tr'
   });
+
   return transcription.text || '';
 }
 
@@ -113,13 +114,16 @@ async function speak(text) {
   const buffer = Buffer.concat(chunks);
   const filePath = path.resolve(`reply_${Date.now()}.mp3`);
   fs.writeFileSync(filePath, buffer);
+
   return filePath;
 }
 
 async function sendVoiceTextButtons(target, text, buttons = []) {
   let voicePath;
+
   try {
     voicePath = await speak(text);
+
     if (target.replyWithVoice) {
       await target.replyWithVoice({ source: voicePath });
     } else {
@@ -134,15 +138,18 @@ async function sendVoiceTextButtons(target, text, buttons = []) {
   const payload = buttons.length
     ? {
         reply_markup: {
-          inline_keyboard: buttons.map(row => row.map(btn => ({
-            text: btn.text,
-            callback_data: btn.data
-          })))
+          inline_keyboard: buttons.map(row =>
+            row.map(btn => ({
+              text: btn.text,
+              callback_data: btn.data
+            }))
+          )
         }
       }
     : undefined;
 
   if (target.reply) return target.reply(text, payload);
+
   return bot.telegram.sendMessage(OWNER_ID, text, payload);
 }
 
@@ -197,7 +204,7 @@ async function coachReply(telegramId, userText) {
   const memory = getMemory(telegramId);
 
   const response = await openai.chat.completions.create({
-    model: process.env.OPENAI_CHAT_MODEL || 'gpt-4.1-mini',
+    model: process.env.OPENAI_CHAT_MODEL || 'gpt-4o-mini',
     messages: [
       {
         role: 'system',
@@ -249,6 +256,7 @@ ${userText}
 
 function extractTasks(aiReply) {
   const lines = aiReply.split('\n');
+
   return lines
     .filter(line => line.includes('-') || /^\d+[.)]/.test(line.trim()))
     .map(line => line.replace(/^[-\d.)\s]+/, '').trim())
@@ -269,7 +277,7 @@ Cevap: ${aiReply}
 `;
 
   const res = await openai.chat.completions.create({
-    model: process.env.OPENAI_CHAT_MODEL || 'gpt-4.1-mini',
+    model: process.env.OPENAI_CHAT_MODEL || 'gpt-4o-mini',
     messages: [{ role: 'user', content: prompt }]
   });
 
@@ -279,9 +287,12 @@ Cevap: ${aiReply}
   for (const line of text.split('\n').slice(0, 3)) {
     const parts = line.split('|').map(p => p.trim());
     if (parts.length < 3) continue;
+
     const [category, importanceRaw, memory] = parts;
     const importance = Math.max(1, Math.min(100, Number.parseInt(importanceRaw, 10) || 50));
+
     if (memory.length < 8) continue;
+
     db.prepare(`
       INSERT INTO memories (telegram_id, memory, importance, category)
       VALUES (?, ?, ?, ?)
@@ -290,8 +301,6 @@ Cevap: ${aiReply}
 }
 
 async function handleUserText(ctx, text) {
-  await sendVoiceTextButtons(ctx, `Aldım ${USER_TITLE}. Şimdi net aksiyona çeviriyorum.`);
-
   const telegramId = String(ctx.from.id);
   const reply = await coachReply(telegramId, text);
 
@@ -301,8 +310,12 @@ async function handleUserText(ctx, text) {
   `).run(telegramId, text, reply);
 
   const tasks = extractTasks(reply);
+
   for (const task of tasks) {
-    db.prepare(`INSERT INTO tasks (telegram_id, task) VALUES (?, ?)`).run(telegramId, task);
+    db.prepare(`
+      INSERT INTO tasks (telegram_id, task)
+      VALUES (?, ?)
+    `).run(telegramId, task);
   }
 
   try {
@@ -311,6 +324,7 @@ async function handleUserText(ctx, text) {
     console.error('Hafıza çıkarımı hatası:', err.message);
   }
 
+  // Sadece final cevap: ses + metin + buton
   await sendVoiceTextButtons(ctx, reply, mainMenuButtons);
 }
 
@@ -330,8 +344,6 @@ bot.start(async (ctx) => {
   await sendVoiceTextButtons(ctx, `
 ${BOT_NAME} aktif ${USER_TITLE}.
 
-Bundan sonra önemli soruları önce sesli okuyacağım, ardından metin ve buton olarak göndereceğim.
-
 Komutlar:
 /gunluk - Günlük 4 soru
 /gorevler - Açık görevler
@@ -344,10 +356,13 @@ Başlayalım mı?
 `, mainMenuButtons);
 });
 
-bot.command('id', async (ctx) => ctx.reply(`Telegram ID: ${ctx.from.id}`));
+bot.command('id', async (ctx) => {
+  await ctx.reply(`Telegram ID: ${ctx.from.id}`);
+});
 
 bot.command('gunluk', async (ctx) => {
   if (!onlyOwner(ctx)) return;
+
   await sendVoiceTextButtons(ctx, `
 ${USER_TITLE}, bugünkü 4 soruyu sesli cevaplayın:
 
@@ -360,6 +375,7 @@ ${USER_TITLE}, bugünkü 4 soruyu sesli cevaplayın:
 
 bot.command('gorevler', async (ctx) => {
   if (!onlyOwner(ctx)) return;
+
   const tasks = db.prepare(`
     SELECT id, task FROM tasks
     WHERE telegram_id = ? AND status = 'pending'
@@ -367,17 +383,25 @@ bot.command('gorevler', async (ctx) => {
     LIMIT 20
   `).all(String(ctx.from.id));
 
-  if (!tasks.length) return sendVoiceTextButtons(ctx, `Açık görevin yok ${USER_TITLE}. Yeni hedef belirleyelim.`, businessButtons);
+  if (!tasks.length) {
+    return sendVoiceTextButtons(ctx, `Açık görevin yok ${USER_TITLE}. Yeni hedef belirleyelim.`, businessButtons);
+  }
+
   await ctx.reply(tasks.map(t => `${t.id}) ${t.task}`).join('\n'));
 });
 
 bot.command('tamam', async (ctx) => {
   if (!onlyOwner(ctx)) return;
+
   const id = ctx.message.text.split(' ')[1];
-  if (!id) return ctx.reply('Kullanım: /tamam 12');
+
+  if (!id) {
+    return ctx.reply('Kullanım: /tamam 12');
+  }
 
   db.prepare(`
-    UPDATE tasks SET status = 'done', done_at = CURRENT_TIMESTAMP
+    UPDATE tasks
+    SET status = 'done', done_at = CURRENT_TIMESTAMP
     WHERE id = ? AND telegram_id = ?
   `).run(id, String(ctx.from.id));
 
@@ -386,7 +410,9 @@ bot.command('tamam', async (ctx) => {
 
 bot.command('rapor', async (ctx) => {
   if (!onlyOwner(ctx)) return;
+
   const telegramId = String(ctx.from.id);
+
   const done = db.prepare(`
     SELECT COUNT(*) as count FROM tasks
     WHERE telegram_id = ? AND status = 'done'
@@ -410,6 +436,7 @@ Yorum: Açık görevleri küçültüp hemen bir tanesini bitirelim.
 
 bot.command('hafiza', async (ctx) => {
   if (!onlyOwner(ctx)) return;
+
   const memories = db.prepare(`
     SELECT id, category, importance, memory FROM memories
     WHERE telegram_id = ?
@@ -417,66 +444,87 @@ bot.command('hafiza', async (ctx) => {
     LIMIT 30
   `).all(String(ctx.from.id));
 
-  if (!memories.length) return ctx.reply('Henüz güçlü hafıza yok.');
-  await ctx.reply(memories.map(m => `${m.id}) [${m.category}/${m.importance}] ${m.memory}`).join('\n'));
+  if (!memories.length) {
+    return ctx.reply('Henüz güçlü hafıza yok.');
+  }
+
+  await ctx.reply(
+    memories.map(m => `${m.id}) [${m.category}/${m.importance}] ${m.memory}`).join('\n')
+  );
 });
 
 bot.action('mood_ready', async (ctx) => {
   if (!onlyOwner(ctx)) return;
+
   await ctx.answerCbQuery();
   await sendVoiceTextButtons(ctx, `Güzel ${USER_TITLE}. Şimdi kaçmadan tek hamle seçiyoruz. Hangisiyle başlıyoruz?`, businessButtons);
 });
 
 bot.action('mood_10min', async (ctx) => {
   if (!onlyOwner(ctx)) return;
+
   await ctx.answerCbQuery();
   await sendVoiceTextButtons(ctx, `Tamam ${USER_TITLE}. 10 dakika veriyorum ama sonra kaçış yok. Döndüğünüzde ilk görevi seçiyoruz.`, mainMenuButtons);
 });
 
 bot.action('mood_low', async (ctx) => {
   if (!onlyOwner(ctx)) return;
+
   await ctx.answerCbQuery();
   await sendVoiceTextButtons(ctx, `Anlıyorum ${USER_TITLE}. Moral düşükse büyük hedef değil, küçük zafer alacağız. Sadece 15 dakikalık görev seçelim.`, businessButtons);
 });
 
 bot.action('task_ad_copy', async (ctx) => {
   if (!onlyOwner(ctx)) return;
+
   await ctx.answerCbQuery();
   await sendVoiceTextButtons(ctx, `Reklam metniyle başlıyoruz ${USER_TITLE}. Hangi ürün için yazıyoruz? Sesli söyleyin, ben metne ve plana çevireceğim.`);
 });
 
 bot.action('task_product_page', async (ctx) => {
   if (!onlyOwner(ctx)) return;
+
   await ctx.answerCbQuery();
   await sendVoiceTextButtons(ctx, `Ürün sayfasını geliştirelim ${USER_TITLE}. Başlık, açıklama veya görsel tarafında hangisi zayıf? Sesli anlatın.`);
 });
 
 bot.action('task_social_idea', async (ctx) => {
   if (!onlyOwner(ctx)) return;
+
   await ctx.answerCbQuery();
   await sendVoiceTextButtons(ctx, `Sosyal medya fikri çıkarıyoruz ${USER_TITLE}. Bugünkü hedef satış mı, etkileşim mi, güven oluşturmak mı?`);
 });
 
 bot.action('task_ai_suggest', async (ctx) => {
   if (!onlyOwner(ctx)) return;
+
   await ctx.answerCbQuery();
-  const suggestion = await coachReply(String(ctx.from.id), 'Bugün benim için en doğru küçük iş görevini sen seç. Kısa, net ve uygulanabilir olsun.');
+
+  const suggestion = await coachReply(
+    String(ctx.from.id),
+    'Bugün benim için en doğru küçük iş görevini sen seç. Kısa, net ve uygulanabilir olsun.'
+  );
+
   await sendVoiceTextButtons(ctx, suggestion, businessButtons);
 });
 
 bot.on('voice', async (ctx) => {
   if (!onlyOwner(ctx)) return ctx.reply('Bu bot özel kullanım içindir.');
 
-  await ctx.reply(`Sesini aldım ${USER_TITLE}, analiz ediyorum.`);
   const voice = ctx.message.voice;
   const filePath = await downloadTelegramFile(voice.file_id);
 
   try {
     const text = await transcribeAudio(filePath);
-    await ctx.reply(`Sen dedin ki:\n${text}`);
+
+    // Ara mesaj yok:
+    // - "Sesini aldım..." yok
+    // - "Sen dedin ki..." yok
+    // - "Aldım..." yok
+    // Sadece final cevap ses + metin olarak gider.
     await handleUserText(ctx, text);
   } catch (err) {
-    console.error(err);
+    console.error('Ses işleme hatası:', err);
     await ctx.reply(`Ses işlenirken hata oldu ${USER_TITLE}. Tekrar gönderin.`);
   } finally {
     safeUnlink(filePath);
@@ -485,14 +533,18 @@ bot.on('voice', async (ctx) => {
 
 bot.on('text', async (ctx) => {
   if (!onlyOwner(ctx)) return;
+
   const text = ctx.message.text;
+
   if (text.startsWith('/')) return;
+
   await handleUserText(ctx, text);
 });
 
 // Sabah 09:00
 cron.schedule('0 9 * * *', async () => {
   if (!OWNER_ID) return;
+
   await sendVoiceTextButtons(bot.telegram, `
 Günaydın ${USER_TITLE}.
 
@@ -508,6 +560,7 @@ Bugün kaçamazsınız. 4 soruya sesli cevap verin:
 // Öğlen 12:30
 cron.schedule('30 12 * * *', async () => {
   if (!OWNER_ID) return;
+
   await sendVoiceTextButtons(bot.telegram, `
 ${USER_TITLE}, öğlen kontrolü.
 
@@ -519,12 +572,18 @@ Yoksa şimdi 25 dakika sadece ona giriyoruz.
 // Öğleden sonra 15:30
 cron.schedule('30 15 * * *', async () => {
   if (!OWNER_ID) return;
-  await sendVoiceTextButtons(bot.telegram, `${USER_TITLE}, bugün iş tarafında bir hamle yapalım. Hangisini seçiyoruz?`, businessButtons);
+
+  await sendVoiceTextButtons(
+    bot.telegram,
+    `${USER_TITLE}, bugün iş tarafında bir hamle yapalım. Hangisini seçiyoruz?`,
+    businessButtons
+  );
 }, { timezone: TZ });
 
 // Akşam 21:30
 cron.schedule('30 21 * * *', async () => {
   if (!OWNER_ID) return;
+
   await sendVoiceTextButtons(bot.telegram, `
 Akşam kontrolü ${USER_TITLE}.
 
@@ -539,6 +598,7 @@ Sesli cevap verin.
 bot.catch((err) => console.error('Bot hatası:', err));
 
 bot.launch();
+
 console.log(`${BOT_NAME} çalışıyor. Timezone: ${TZ}`);
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
