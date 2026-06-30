@@ -11,7 +11,6 @@ jobs:
 
     steps:
       - name: Deploy Phoenix AI
-        shell: bash
         run: |
           git config --global --add safe.directory /opt/phoenix
 
@@ -22,7 +21,12 @@ jobs:
 
           npm install
 
-          pm2 restart phoenix-ai || pm2 start npm --name phoenix-ai -- start
+          pm2 describe phoenix-ai >/dev/null 2>&1
+
+          if [ $? -eq 0 ]; then
+              pm2 restart phoenix-ai --update-env
+          else
+              pm2 start npm --name phoenix-ai -- start
+          fi
 
           pm2 save
-          pm2 status
